@@ -37,10 +37,10 @@ parser = argparse.ArgumentParser(description='Ultrasound CV Framework')
 parser.add_argument('--config',type=str,default='grey_SWE_gcn')
 
 class base_config(object):
-    def __init__(self,log_root,net,args):
-        self.net = getattr(import_module('models.attentionMIL'),net)()
+    def __init__(self,log_root,args):
+        self.net = getattr(import_module('models.attentionMIL'),args.net)()
         print(self.net)
-        self.net = self.cuda()
+        self.net = self.net.cuda()
         self.train_transform = transforms.Compose([
                     transforms.Resize((224,224)),
                     #transforms.ColorJitter(brightness = 0.25),
@@ -63,8 +63,48 @@ class base_config(object):
         self.testbag = PatientBags_old(args.data_root, pre_transform=self.test_transform, crop_mode=False,sub_list = [args.test_fold])
         self.train_loader = DataLoader(self.trainbag, batch_size=args.batchsize, shuffle=True, num_workers=8)
         self.val_loader = DataLoader(self.testbag, batch_size=args.batchsize, shuffle=False, num_workers=8)
-        self.trainer = BaseTrainer(self.net, self.optimizer, self.lrsch, None, self.train_loader, self.val_loader, logger, 0)
+        self.trainer = BaseTrainer(self.net, self.optimizer, self.lrsch, None, self.train_loader, self.val_loader, self.logger, 0)
 
+        self.save_config(args)
+    
+    def save_config(self,args):
+        config_file = './saved_configs/'+args.config_name+'.txt'
+        f = open(config_file,'a+')
+        argDict = args.__dict__
+        for arg_key, arg_value in argDict.items():
+            f.writelines(arg_key+':'+str(arg_value)+'\n')
+        f.close()
+        self.logger.auto_backup('./')
+        self.logger.backup_files([config_file])
+
+
+class graph_config(base_config):
+    def __init__(self, log_root, args):
+        self.net = getattr(import_module('models.graph_attention'),args.net)()
+        print(self.net)
+        self.net = self.net.cuda()
+        self.train_transform = transforms.Compose([
+                    transforms.Resize((112,112)),
+                    #transforms.ColorJitter(brightness = 0.25),
+                    transforms.RandomHorizontalFlip(0.5),
+                    transforms.RandomVerticalFlip(0.5),
+                    # transforms.ColorJitter(0.25, 0.25, 0.25, 0.25),
+                    transforms.ToTensor()
+        ])
+        self.test_transform = transforms.Compose([
+                    transforms.Resize((112,112)),
+                    transforms.ToTensor()
+        ])
+        self.optimizer = Adam(self.net.parameters(), lr=args.lr)
+        self.lrsch = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[10, 30, 50, 70], gamma=0.5)
+        self.logger = Logger(log_root)
+        self.trainbag = DirectBags(args.data_root, pre_transform=self.train_transform, 
+                    sub_list=[x for x in [0,1,2,3,4] if x!=args.test_fold])
+        self.testbag = DirectBags(args.data_root, pre_transform=self.test_transform, sub_list = [args.test_fold])
+        self.train_loader = DataLoader(self.trainbag, batch_size=args.batchsize, shuffle=True, num_workers=8)
+        self.val_loader = DataLoader(self.testbag, batch_size=args.batchsize, shuffle=False, num_workers=8)
+        self.trainer = MILTrainer(self.net, self.optimizer, self.lrsch, None, self.train_loader, self.val_loader, self.logger, 0)
+        self.save_config(args)
 
 
 if __name__=='__main__':
@@ -72,7 +112,7 @@ if __name__=='__main__':
     #configs = configs.__dict__
 
     # update configss from arg parse
-    parser.add_argument('--data_root',type=str,default='/media/hhy/data/USdata/MergePhase1/5folds_BM')
+    parser.add_argument('--data_root',type=str,default='/media/hhy/data/USdata/MergePhase1/5folds_ALNM')
     parser.add_argument('--log_root',type=str)
     parser.add_argument('--test_fold',type=int,default=0)
     parser.add_argument('--lr',type=float,default=1e-4)
@@ -88,60 +128,18 @@ if __name__=='__main__':
     if not os.path.exists(log_root):
         os.mkdir(log_root)
     # choose model
-    net = args.net
+    base_nets = ['Attention','Res_Attention']
+    graph_nets = ['H_Attention_Graph']
 
-    if (net == 'H_Attention_Graph') or (net =='H_Attention_GraphV2'):
-        net = getattr(import_module('models.graph_attention'),net)()
-    else:
-        net = getattr(import_module('models.attentionMIL'),net)()
-    '''
-    net = getattr(import_module('models.attentionMIL'),net)()
-    '''
-    print(net)
-    net = net.cuda()
-
-    optimizer = Adam(net.parameters(), lr=args.lr)
-    lrsch = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[10, 30, 50, 70], gamma=0.5)
-    logger = Logger(log_root)
-    train_transform = transforms.Compose([
-                    transforms.Resize((224,224)),
-                    #transforms.ColorJitter(brightness = 0.25),
-                    transforms.RandomHorizontalFlip(0.5),
-                    transforms.RandomVerticalFlip(0.5),
-                    # transforms.ColorJitter(0.25, 0.25, 0.25, 0.25),
-                    transforms.ToTensor()
-        ])
-    test_transform = transforms.Compose([
-                    transforms.Resize((224,224)),
-                    transforms.ToTensor()
-        ])
-    '''
-    trainbag = DirectBags(args.data_root, pre_transform=train_transform, 
-                    sub_list=[x for x in [0,1,2,3,4] if x!=args.test_fold])
-    testbag = DirectBags(args.data_root, pre_transform=test_transform, sub_list = [args.test_fold])
-    '''
-    trainbag = PatientBags_old(args.data_root, pre_transform=train_transform, crop_mode=False,
-                    sub_list=[x for x in [0,1,2,3,4] if x!=args.test_fold])
-    testbag = PatientBags_old(args.data_root, pre_transform=test_transform, crop_mode=False,sub_list = [args.test_fold])
-
-
-    train_loader = DataLoader(trainbag, batch_size=args.batchsize, shuffle=True, num_workers=8)
-    val_loader = DataLoader(testbag, batch_size=args.batchsize, shuffle=False, num_workers=8)
-    trainer = BaseTrainer(net, optimizer, lrsch, None, train_loader, val_loader, logger, 0)
-    config_name = args.config_name
-
-    ## save file
-    config_file = './saved_configs/'+config_name+'.txt'
-    f = open(config_file,'a+')
-    argDict = args.__dict__
-    for arg_key, arg_value in argDict.items():
-        f.writelines(arg_key+':'+str(arg_value)+'\n')
-    f.close()
-    logger.auto_backup('./')
-    logger.backup_files([config_file])
+    if args.net in base_nets:
+        config_object = base_config(log_root,args)
+    if args.net in graph_nets:
+        config_object = graph_config(log_root,args)
+    
+    
 
     # train and eval
-    for epoch in range(logger.global_step, args.epoch):
+    for epoch in range(config_object.logger.global_step, args.epoch):
         print('Now epoch {}'.format(epoch))
-        trainer.train()
-        trainer.test()
+        config_object.trainer.train()
+        config_object.trainer.test()

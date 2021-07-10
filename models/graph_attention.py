@@ -2,11 +2,34 @@ import torch
 from torch._C import set_flush_denormal
 import torch.nn as nn
 import torch.nn.functional as F
-
+from .ResNet import ResNet18, ResNet10
 from torch_geometric.nn import SAGPooling
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 
+class FE_Res(nn.Module):
+    def __init__(self, input_dim=3, L=500, D=128, K=1):
+        super(FE_Res, self).__init__()
+        self.input_dim = input_dim
+        self.L = L
+        self.D = D
+        self.K = K
+
+        self.feature_extractor_part1 = ResNet18()
+
+        self.feature_extractor_part2 = nn.Sequential(
+            nn.Linear(512 * 4 * 4, self.L),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        x = x.squeeze(0)
+        #print(x.shape)
+        H = self.feature_extractor_part1(x)
+        #print(H.shape)       
+        H = H.view(-1, 512 * 4* 4)       
+        H = self.feature_extractor_part2(H)  # NxL
+        return H
 
 
 class FE(nn.Module):
@@ -27,14 +50,16 @@ class FE(nn.Module):
         )
 
         self.feature_extractor_part2 = nn.Sequential(
-            nn.Linear(50 * 4 * 4, self.L),
+            nn.Linear(50 * 25 * 25, self.L),
             nn.ReLU(),
         )
 
     def forward(self, x):
         x = x.squeeze(0)
-        H = self.feature_extractor_part1(x)       
-        H = H.view(-1, 50 * 4* 4)       
+        #print(x.shape)
+        H = self.feature_extractor_part1(x)
+        #print(H.shape)  
+        H = H.view(-1, 50 * 25* 25)       
         H = self.feature_extractor_part2(H)  # NxL
         return H
 

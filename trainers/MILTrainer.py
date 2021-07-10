@@ -44,7 +44,7 @@ class MILTrainer(object):
         self.save_interval = save_interval
             
     def train(self):
-        self.net.train()
+        self.net.eval()
         self.logger.update_step()
         train_loss = 0.
         prob = []
