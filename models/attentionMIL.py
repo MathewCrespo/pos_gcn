@@ -1,7 +1,69 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .ResNet import ResNet10, ResNet18
+from .ResNet import ResNet10, ResNet18, ResNet34
+from .Inception import inception_v3
+
+class HX_Attention(nn.Module):
+    def __init__(self, input_dim=3, L=500, D=128, K=1):
+        super(HX_Attention, self).__init__()
+        self.input_dim = input_dim
+        self.L = L
+        self.D = D
+        self.K = K
+
+        self.feature_extractor_part1 = inception_v3(pretrained=False, aux_logits=False)
+        self.avgpool = nn.AvgPool2d(8, stride=1) 
+        self.ins_score = nn.Conv2d(2048,1,kernel_size=1, stride=1,bias=False)
+
+        self.cls = nn.Sequential(nn.Linear(2048*8*8,1),
+                                nn.Dropout(p=0.7),
+                                nn.Sigmoid()
+        )
+
+    def forward(self, x, debug=False):
+        x = x.squeeze(0)
+        
+        H = self.feature_extractor_part1(x)
+        G = self.avgpool(H)
+        a = self.ins_score(G)  # [k,1,1,1]
+        #print(a.shape)
+        
+        a = a.view(-1, 1)
+        #print(a.shape)
+        w = F.softmax(a, dim=0)  # 1 x K
+        #print(w)
+        #print(w.shape)
+        H2 = H.view(-1,2048*8*8)
+        batch = w.shape[0]
+        new_w = w.repeat(1,2048*8*8)
+        #print(1)
+        #print(new_w.shape)
+        #print(H2.shape)
+        H = torch.mul(new_w,H2)
+        bag_H,_ = torch.max(H,dim=0)
+
+        out = self.cls(bag_H)
+        Y_hat = torch.ge(out, 0.5).float()
+
+        return out, Y_hat, w
+
+    # AUXILIARY METHODS
+    def calculate_classification_error(self, X, Y):
+        Y = Y.float()
+        _, Y_hat, _ = self.forward(X)
+        error = 1. - Y_hat.eq(Y).cpu().float().mean().item()
+
+        return error, Y_hat
+
+    def calculate_objective(self, X, Y):
+        Y = Y.float()
+        Y_prob, Y_hat, A = self.forward(X)
+        Y_prob = torch.clamp(Y_prob, min=1e-5, max=1. - 1e-5)
+        neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
+        #print("Y_prob is：", Y_prob)
+        return  Y_prob, Y_hat ,neg_log_likelihood
+
 
 class Res_Attention(nn.Module):
     def __init__(self, input_dim=3, L=500, D=128, K=1):
@@ -11,7 +73,7 @@ class Res_Attention(nn.Module):
         self.D = D
         self.K = K
 
-        self.feature_extractor_part1 = ResNet18()
+        self.feature_extractor_part1 = ResNet34()
 
         self.feature_extractor_part2 = nn.Sequential(
             nn.Linear(512 * 7 * 7, self.L),
@@ -53,7 +115,7 @@ class Res_Attention(nn.Module):
         M = torch.mm(A, H)  # KxL
 
         Y_prob = self.classifier(M)
-        Y_hat = torch.ge(Y_prob, 0.5).float()
+        Y_hat = torch.ge(Y_prob, 0.45).float()
 
         return Y_prob, Y_hat, A
 
@@ -69,7 +131,7 @@ class Res_Attention(nn.Module):
         Y = Y.float()
         Y_prob, Y_hat, A = self.forward(X)
         Y_prob = torch.clamp(Y_prob, min=1e-5, max=1. - 1e-5)
-        neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
+        neg_log_likelihood = -1. * (3*Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
         #print("Y_prob is：", Y_prob)
         return  Y_prob, Y_hat ,neg_log_likelihood
 
@@ -666,4 +728,10 @@ class GatedAttention(nn.Module):
         neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))  # negative log bernoulli
 
         return neg_log_likelihood, Y_prob, A
+
+if __name__ == '__main__':
+    a = torch.randn(5,3,299,299)
+    model = HX_Attention()
+    out = model(a)
+    print(out)
 

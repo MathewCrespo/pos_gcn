@@ -15,7 +15,7 @@ class FE_Res(nn.Module):
         self.D = D
         self.K = K
 
-        self.feature_extractor_part1 = ResNet18()
+        self.feature_extractor_part1 = ResNet10()
 
         self.feature_extractor_part2 = nn.Sequential(
             nn.Linear(512 * 4 * 4, self.L),
@@ -572,7 +572,7 @@ class Attention(nn.Module):
         return Y_prob, Y_pred, neg_log_likelihood, A
 
 class H_Attention_Graph(nn.Module):
-    def __init__(self, fe = FE() , gcn = GCN_Pos_normcat(), attn = Attention()):
+    def __init__(self, fe = FE_Res() , gcn = GCN_Pos_normcat(), attn = Attention()):
         super(H_Attention_Graph,self).__init__()
         self.fe = fe
         self.gcn = gcn
