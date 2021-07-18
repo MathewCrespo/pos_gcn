@@ -268,9 +268,10 @@ if __name__=="__main__":
     transforms.ToTensor(),
     ])
 
-    trainset = PatientBags(root,pre_transform= pre,sub_list=[0,1,2,3,4])
+    trainset = PatientBags_old(root,pre_transform= pre,sub_list=[0,1,2,3,4])
+    trainloader = Dataloader(trainset)
 
-    print(len(trainset))
+    print(len(trainloader))
     '''
     bag_state = []
     

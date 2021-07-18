@@ -2,7 +2,7 @@ import os
 import numpy as np
 import json
 
-def parse_best(name):
+def parse_best(name,mode='overall'):
     metric_record = {
         'Test/AUC':[],
         'Test/Acc':[],
@@ -21,13 +21,21 @@ def parse_best(name):
             if key in metric_record:
                 metric_record[key].append(value)
     log.close()
+
+    if mode == 'overall':
+        n = np.array([metric_record['Test/AUC'],metric_record['Test/Acc'],metric_record['Test/Malignant_precision'],
+                        metric_record['Test/Malignant_recall'],metric_record['Test/Benign_recall'],metric_record['Test/Malignant_F1']])
+        overall = np.sum(n,axis=0)
+        idx = np.argmax(overall)
     
+    if mode == 'auc':
     # to find the metrics with the highest auc
-    auc = max(metric_record['Test/AUC'])
-    idx = metric_record['Test/AUC'].index(auc)
+
+        auc = max(metric_record['Test/AUC'])
+        idx = metric_record['Test/AUC'].index(auc)
     best_metric = {
-        'epoch':idx,
-        'auc':auc,
+        'epoch':str(idx),
+        'auc':metric_record['Test/AUC'][idx],
         'acc':metric_record['Test/Acc'][idx],
         'precision':metric_record['Test/Malignant_precision'][idx],
         'recall':metric_record['Test/Malignant_recall'][idx],
@@ -36,13 +44,13 @@ def parse_best(name):
 
     }
     print(best_metric)
-    save_path = '/media/hhy/data/gcn_results/'+ name + '/best.json'
+    save_path = '/media/hhy/data/gcn_results/'+ name + '/'+ mode +'.json'
     js = json.dumps(best_metric)
     fp = open(save_path,'a')
     fp.write(js)
     fp.close()
 
-
 if __name__ == '__main__':
-    parse_best('gcn_alnm4') 
+    for i in range(4):
+        parse_best('hxALNM_{}'.format(i+1)) 
     

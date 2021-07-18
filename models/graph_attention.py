@@ -2,7 +2,7 @@ import torch
 from torch._C import set_flush_denormal
 import torch.nn as nn
 import torch.nn.functional as F
-from .ResNet import ResNet18, ResNet10
+from .ResNet import ResNet18, ResNet10, ResNet34
 from torch_geometric.nn import SAGPooling
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
@@ -10,6 +10,30 @@ from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
 class FE_Res(nn.Module):
     def __init__(self, input_dim=3, L=500, D=128, K=1):
         super(FE_Res, self).__init__()
+        self.input_dim = input_dim
+        self.L = L
+        self.D = D
+        self.K = K
+
+        self.feature_extractor_part1 = ResNet34()
+
+        self.feature_extractor_part2 = nn.Sequential(
+            nn.Linear(512 * 4 * 4, self.L),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        x = x.squeeze(0)
+        #print(x.shape)
+        H = self.feature_extractor_part1(x)
+        #print(H.shape)       
+        H = H.view(-1, 512 * 4* 4)       
+        H = self.feature_extractor_part2(H)  # NxL
+        return H
+
+class FE_Res10(nn.Module):
+    def __init__(self, input_dim=3, L=500, D=128, K=1):
+        super(FE_Res10, self).__init__()
         self.input_dim = input_dim
         self.L = L
         self.D = D
@@ -30,8 +54,7 @@ class FE_Res(nn.Module):
         H = H.view(-1, 512 * 4* 4)       
         H = self.feature_extractor_part2(H)  # NxL
         return H
-
-
+        
 class FE(nn.Module):
     def __init__(self, input_dim=3, L=500, D=128, K=1):
         super(FE, self).__init__()
@@ -62,6 +85,8 @@ class FE(nn.Module):
         H = H.view(-1, 50 * 25* 25)       
         H = self.feature_extractor_part2(H)  # NxL
         return H
+
+
 
 class GCN_H (nn.Module):  
     def __init__(self,num_features=500, nhid=256, num_classes=2, pooling_ratio = 0.75):
@@ -559,7 +584,7 @@ class Attention(nn.Module):
         bag_f = torch.mm(A, x)
 
         prob = self.classifier(bag_f)
-        pred = torch.ge(prob, 0.45).float()
+        pred = torch.ge(prob, 0.5).float()
 
         return prob, pred, A
     
@@ -567,12 +592,12 @@ class Attention(nn.Module):
         Y = Y.float()
         Y_prob, Y_pred, A = self.forward(X)
         Y_prob = torch.clamp(Y_prob, min=1e-5, max=1. - 1e-5)
-        neg_log_likelihood = -1. * (3*Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))
+        neg_log_likelihood = -1. * (Y * torch.log(Y_prob) + (1. - Y) * torch.log(1. - Y_prob))
 
         return Y_prob, Y_pred, neg_log_likelihood, A
 
 class H_Attention_Graph(nn.Module):
-    def __init__(self, fe = FE_Res() , gcn = GCN_Pos_normcat(), attn = Attention()):
+    def __init__(self, fe = FE_Res() , gcn = GCN_H(), attn = Attention()):
         super(H_Attention_Graph,self).__init__()
         self.fe = fe
         self.gcn = gcn
@@ -610,7 +635,7 @@ class H_Attention_Graph(nn.Module):
 
 
 class H_Attention_GraphV2(nn.Module):
-    def __init__(self, fe = FE() , f_gcn = GCN_H(), attn = Attention()):
+    def __init__(self, fe = FE_Res10() , f_gcn = GCN_H(), attn = Attention()):
         super(H_Attention_GraphV2,self).__init__()
         self.fe = fe
         self.gcn = f_gcn
@@ -631,6 +656,43 @@ class H_Attention_GraphV2(nn.Module):
         for i in range(len(idx_list)-1):
             h_patch = H[idx_list[i]:idx_list[i+1], :]
             i_feature = self.gcn(h_patch.cuda())
+            #perms_set.append(perms)
+            #scores_set.append(scores)
+            #print(i_feature.shape)
+            img_features.append(i_feature)
+
+        instance_f = torch.cat([x for x in img_features],dim = 0)
+        #print('Image Feature Shape is ', instance_f.shape)
+
+        # part3 bag aggregation and prediction
+        Y_prob, Y_pred, loss, weights = self.attn.cal_loss(instance_f,y)
+
+        return Y_prob, Y_pred, loss, weights
+    
+class H_Attention_GraphV3(nn.Module):
+    def __init__(self, fe = FE_Res10() , gcn = GCN_Pos_normcat(), attn = Attention()):
+        super(H_Attention_GraphV3,self).__init__()
+        self.fe = fe
+        self.gcn = gcn
+        self.attn = attn
+        
+    def forward(self, x, img_info, y, idx_list):
+        #print('Input Shape is ', x.shape)
+        # part1: feature extractor
+        H = self.fe(x)
+        img_info = img_info.squeeze(0)
+
+        
+        #print('Patch Feature Shape is ', H.shape)
+
+        # part2: construct a graph and get image level feature
+        img_features = []
+        #perms_set = []
+        #scores_set = []
+        for i in range(len(idx_list)-1):
+            h_patch = H[idx_list[i]:idx_list[i+1], :]
+            i_info = img_info[idx_list[i]:idx_list[i+1], :]
+            i_feature = self.gcn(h_patch.cuda(), i_info)
             #perms_set.append(perms)
             #scores_set.append(scores)
             #print(i_feature.shape)

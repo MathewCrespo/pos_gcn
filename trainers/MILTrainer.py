@@ -24,6 +24,11 @@ from utils.logger import Logger
 import argparse
 from importlib import import_module
 
+def set_bn_eval(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != -1:
+      m.eval()
+
 class MILTrainer(object):
     def __init__(self, net, optimizer, lrsch, loss, train_loader, val_loader, logger, start_epoch,
                  save_interval=10):
@@ -45,6 +50,7 @@ class MILTrainer(object):
             
     def train(self):
         self.net.eval()
+        #self.net.apply(set_bn_eval)
         self.logger.update_step()
         train_loss = 0.
         prob = []

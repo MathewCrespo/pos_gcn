@@ -24,9 +24,14 @@ from utils.logger import Logger
 import argparse
 from importlib import import_module
 
+def set_bn_eval(m):
+    classname = m.__class__.__name__
+    if classname.find('BatchNorm') != -1:
+      m.eval()
+
 class BaseTrainer(object):
     def __init__(self, net, optimizer, lrsch, loss, train_loader, val_loader, logger, start_epoch,
-                 save_interval=10):
+                 save_interval=10,batchsize=16):
         '''
         mode:   0: only single task--combine 
                 1: multi task added, three losses are simply added together.
@@ -34,6 +39,7 @@ class BaseTrainer(object):
         
         '''
         self.net = net
+
         self.optimizer = optimizer
         self.lrsch = lrsch
         self.loss = loss
@@ -42,45 +48,38 @@ class BaseTrainer(object):
         self.logger = logger
         self.logger.global_step = start_epoch
         self.save_interval = save_interval
+        self.batchsize= batchsize
             
     def train(self):
-        self.net.eval()
+        self.net.train()
+        self.net.apply(set_bn_eval)
         self.logger.update_step()
         train_loss = 0.
         prob = []
         pred = []
         target = []
-        for data, label in (tqdm(self.train_loader, ascii=True, ncols=60)):
+        l = len(self.train_loader)
+        for idx, (data, label) in enumerate(tqdm(self.train_loader, ascii=True, ncols=60)):
             # reset gradients
-            self.optimizer.zero_grad()
+            if idx % self.batchsize == 0:
+                self.optimizer.zero_grad()
             data = data.cuda()
             bag_label = label.cuda()
-            #idx_list = idx_list.cuda()
+
             prob_label, predicted_label, loss = self.net.calculate_objective(data,bag_label)
             train_loss += loss.item()
-            target.append(bag_label.cpu().detach().numpy().ravel()) # bag_label or label??
+            
+            target.append(bag_label.cpu().detach().numpy().ravel())
             pred.append(predicted_label.cpu().detach().numpy().ravel())
             prob.append(prob_label.cpu().detach().numpy().ravel())
 
-            # backward pass
             loss.backward()
+            # backward pass
+            if ((idx+1) % self.batchsize == 0) or (idx == l-1):
             # step
-            self.optimizer.step()
-            self.lrsch.step()
+                self.optimizer.step()
+                self.lrsch.step()
 
-             # log
-            '''
-            target.append(bag_label.cpu().detach().float().tolist()[0])
-            pred.append(predicted_label.cpu().detach().float().tolist()[0])
-            prob.append(prob_label.cpu().detach().float().tolist()[0])
-            '''
-            
-        # calculate loss and error for epoch
-        '''
-        print('target is {}'.format(target))
-        print('pred is {}'.format(pred))
-        print('prob is {}'.format(prob))
-        '''
         train_loss /= len(self.train_loader)
         self.log_metric("Train", target, prob, pred)
 
