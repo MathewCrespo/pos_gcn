@@ -11,7 +11,7 @@ def parse_best(name,mode='overall'):
         'Test/Benign_recall':[],
         'Test/Malignant_F1':[]
     }
-    log_path = '/media/hhy/data/gcn_results/'+ name + '/log.txt'
+    log_path = '/media/hhy/data/gcn_results/ablation/'+ name + '/log.txt'
     log = open(log_path,'r')
     lines = log.readlines()
     for line in lines:
@@ -44,13 +44,13 @@ def parse_best(name,mode='overall'):
 
     }
     print(best_metric)
-    save_path = '/media/hhy/data/gcn_results/'+ name + '/'+ mode +'.json'
+    save_path = '/media/hhy/data/gcn_results/ablation/'+ name + '/'+ mode +'.json'
     js = json.dumps(best_metric)
     fp = open(save_path,'a')
     fp.write(js)
     fp.close()
 
 if __name__ == '__main__':
-    for i in range(4):
-        parse_best('hxALNM_{}'.format(i+1)) 
+    for i in range(5):
+        parse_best('K8_{}'.format(i)) 
     

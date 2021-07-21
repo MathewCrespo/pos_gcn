@@ -116,7 +116,7 @@ class PatientBags(Dataset):
                 idx_list.append(idx_temp)
             bag_imgs = torch.cat([x for x in grey_imgs], dim=0)
             if self.crop_list:
-                return bag_imgs, label, idx_list
+                return bag_imgs,label, idx_list
             else:
                 return bag_imgs, label
 

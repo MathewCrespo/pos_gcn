@@ -6,6 +6,9 @@ from .ResNet import ResNet18, ResNet10, ResNet34
 from torch_geometric.nn import SAGPooling
 from torch_geometric.nn import GCNConv
 from torch_geometric.nn import global_mean_pool as gap, global_max_pool as gmp
+from sklearn.neighbors import kneighbors_graph
+from scipy import sparse
+import numpy as np
 
 class FE_Res(nn.Module):
     def __init__(self, input_dim=3, L=500, D=128, K=1):
@@ -596,6 +599,75 @@ class Attention(nn.Module):
 
         return Y_prob, Y_pred, neg_log_likelihood, A
 
+class GCN_Pos_normcat_K (nn.Module):  
+    def __init__(self,k=8,num_features=500, nhid=256, num_classes=2, pooling_ratio = 0.75):
+        super(GCN_Pos_normcat_K,self).__init__()
+        self.k = k
+        self.num_features = num_features
+        self.nhid = nhid
+        self.num_classes = num_classes
+        self.pooling_ratio = pooling_ratio
+
+        self.pos_embed = nn.Sequential(
+            nn.Linear(6, 12)
+        )
+        
+        self.conv1 = GCNConv(512, self.nhid)
+        self.pool1 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+        self.conv2 = GCNConv(self.nhid, self.nhid)
+        self.pool2 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+        self.conv3 = GCNConv(self.nhid, self.nhid)
+        self.pool3 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+        self.layernorm_f = nn.LayerNorm(num_features)
+        self.layernorm_p = nn.LayerNorm(12)
+
+    def to_coo(self,adj):
+        coo = sparse.coo_matrix(adj)
+        row = torch.from_numpy(coo.row.astype(np.int64)).to(torch.long)
+        col = torch.from_numpy(coo.col.astype(np.int64)).to(torch.long)
+        edge_index = torch.stack([row,col])
+        return edge_index
+
+
+    def construct(self,x):
+        num_node = x.shape[0]
+        if num_node == 1 :
+            edge_index = torch.LongTensor([[],[]])
+        else:
+            if num_node -1 < self.k:
+                adj = torch.ones((num_node,num_node))
+                edge_index = self.to_coo(adj)
+            
+            else:
+                adj = kneighbors_graph(x.cpu().detach().numpy(), n_neighbors=self.k)
+                edge_index = self.to_coo(adj)
+        
+        return edge_index.cuda()
+                
+    
+    def forward(self, feature, img_info):
+        # position embedding using simple linear layer
+        feature = self.layernorm_f(feature)
+        pos_info = self.pos_embed(img_info)
+        pos_info = self.layernorm_p(pos_info)
+
+        feature = torch.cat([feature,pos_info],dim=1)
+        edge_index = self.construct(feature)        
+        x = F.relu(self.conv1(feature,edge_index))
+        x, edge_index, _, batch, perm1, score1 = self.pool1(x, edge_index)
+        x1 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+
+        x = F.relu(self.conv2(x, edge_index))
+        x, edge_index, _, batch,perm2, score2 = self.pool2(x, edge_index)
+        x2 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+        
+        x = F.relu(self.conv3(x, edge_index))
+        x, edge_index, _, batch, perm3, score3 = self.pool3(x, edge_index)
+        x3 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+
+        x = x1 + x2 + x3   # image feature after SAGPooling
+        return x
+
 class H_Attention_Graph(nn.Module):
     def __init__(self, fe = FE_Res() , gcn = GCN_H(), attn = Attention()):
         super(H_Attention_Graph,self).__init__()
@@ -670,7 +742,7 @@ class H_Attention_GraphV2(nn.Module):
         return Y_prob, Y_pred, loss, weights
     
 class H_Attention_GraphV3(nn.Module):
-    def __init__(self, fe = FE_Res10() , gcn = GCN_Pos_normcat(), attn = Attention()):
+    def __init__(self, fe = FE_Res10() , gcn = GCN_Pos_normcat_K(), attn = Attention()):
         super(H_Attention_GraphV3,self).__init__()
         self.fe = fe
         self.gcn = gcn

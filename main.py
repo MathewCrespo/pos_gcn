@@ -22,8 +22,10 @@ from data.PatientBags import PatientBags
 from data.PatientBags_old import PatientBags_old
 from models.attentionMIL import Attention, GatedAttention,H_Attention, S_H_Attention, S_H_Attention2, Res_Attention, HX_Attention, HX_Res
 from models.graph_attention import H_Attention_Graph, H_Attention_GraphV2
+from models.ablation import Double_Attention, Graph_Attention
 from trainers.MILTrainer import MILTrainer
 from trainers.BaseTrainer import BaseTrainer
+from trainers.AblationTrainer import AblationTrainer
 from utils.logger import Logger
 from torch.optim import Adam,Adadelta
 import torch.optim as optim
@@ -138,6 +140,56 @@ class HX_config(base_config):
 
         self.save_config(args)
 
+class ablation_config(base_config):
+    def __init__(self, log_root, args):
+        #  different ways of cropping lesion patches:
+        if args.patch == 'crop':
+            self.train_transform = transforms.Compose([
+                    transforms.Resize((896,896)),
+                    #transforms.ColorJitter(brightness = 0.25),
+                    transforms.RandomHorizontalFlip(0.5),
+                    # transforms.ColorJitter(0.25, 0.25, 0.25, 0.25),
+                    transforms.ToTensor()
+            ])
+            self.test_transform = transforms.Compose([
+                    transforms.Resize((896,896)),
+                    transforms.ToTensor()
+            ])
+            self.trainbag = PatientBags(args.data_root, pre_transform=self.train_transform,crop_mode=True,
+                    sub_list=[x for x in [0,1,2,3,4] if x!=args.test_fold],crop_list=True)
+            self.testbag = PatientBags(args.data_root, pre_transform=self.test_transform, crop_mode = True,sub_list = [args.test_fold],crop_list=True)
+        
+        else:
+            self.train_transform = transforms.Compose([
+                    transforms.Resize((112,112)),
+                    #transforms.ColorJitter(brightness = 0.25),
+                    transforms.RandomHorizontalFlip(0.5),
+                    # transforms.ColorJitter(0.25, 0.25, 0.25, 0.25),
+                    transforms.ToTensor()
+            ])
+            self.test_transform = transforms.Compose([
+                    transforms.Resize((112,112)),
+                    transforms.ToTensor()
+            ])
+            self.trainbag = DirectBags(args.data_root, pre_transform=self.train_transform, 
+                    sub_list=[x for x in [0,1,2,3,4] if x!=args.test_fold], is_info=False)
+            self.testbag = DirectBags(args.data_root, pre_transform=self.test_transform, sub_list = [args.test_fold],is_info=False)
+
+        
+        self.net = getattr(import_module('models.ablation'),args.attention)()  # Double_Attention or Graph_Attention
+        print(self.net)
+        self.net = self.net.cuda()
+        
+        self.optimizer = Adam(self.net.parameters(), lr=args.lr)
+        self.lrsch = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[10, 30, 50, 70], gamma=0.5)
+        self.logger = Logger(log_root)
+        self.train_loader = DataLoader(self.trainbag, batch_size=args.batchsize, shuffle=True, num_workers=8)
+        self.val_loader = DataLoader(self.testbag, batch_size=args.batchsize, shuffle=False, num_workers=8)
+        
+        self.trainer = AblationTrainer(self.net, self.optimizer, self.lrsch, None, self.train_loader, self.val_loader, self.logger, 0)
+
+        self.save_config(args)
+
 
 
 if __name__=='__main__':
@@ -153,6 +205,9 @@ if __name__=='__main__':
     parser.add_argument('--resume',type=int,default=-1)
     parser.add_argument('--batchsize',type=int,default=1)
     parser.add_argument('--net',type=str,default='H_Attention_Graph')
+    parser.add_argument('--ablation',type=bool,default=False)
+    parser.add_argument('--patch',type=str,default='ss')
+    parser.add_argument('--attention',type=str,default='attention')
     #parser.add_argument('--config_name',type=str)
 
     # parse parameters
@@ -165,12 +220,15 @@ if __name__=='__main__':
     baseline = ['HX_Attention','HX_Res']
     graph_nets = ['H_Attention_Graph','H_Attention_GraphV3','H_Attention_GraphV2']
 
-    if args.net in base_nets:
-        config_object = base_config(log_root,args)
-    if args.net in baseline:
-        config_object = HX_config(log_root,args)
-    if args.net in graph_nets:
-        config_object = graph_config(log_root,args)
+    if not args.ablation:
+        if args.net in base_nets:
+            config_object = base_config(log_root,args)
+        if args.net in baseline:
+            config_object = HX_config(log_root,args)
+        if args.net in graph_nets:
+            config_object = graph_config(log_root,args)
+    if args.ablation:
+        config_object = ablation_config(log_root,args)
     
     
 

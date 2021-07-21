@@ -33,7 +33,7 @@ class DirectBags(Dataset):
         pre_transform: (torchvision.transform) the transform used
         modality: (int) indicate which modality to use. 0: US 1: SWE 2: US & SWE
     '''
-    def __init__(self, root, pre_transform=None, sub_list = [0], task = 'BM'):
+    def __init__(self, root, pre_transform=None, sub_list = [0], task = 'BM', is_info = True):
         self.root = root
         self.img_list = [] ## a list of tuple (grey_filename, swe_filename)
         self.pre_transform = pre_transform
@@ -44,9 +44,10 @@ class DirectBags(Dataset):
         self.num_pbag = 0
         self.sub_list = sub_list
         self.task = task
+        self.is_info = is_info
         for i in self.sub_list:
             self.scan(os.path.join(self.root,str(i)))
-        self.cut_null()
+        
     def cut_null(self):  # delete empty bags
         null_record = []
         for i in range(len(self.patient_dict)):
@@ -131,7 +132,11 @@ class DirectBags(Dataset):
             idx_list.append(idx_temp)
         bag_imgs = torch.cat([x for x in grey_imgs], dim=0)
         bag_pos = torch.cat([x for x in img_info], dim=0)
-        return bag_imgs, bag_pos, label, idx_list
+
+        if self.is_info:
+            return bag_imgs, bag_pos, label, idx_list
+        else:
+            return bag_imgs, label, idx_list
 
     def scan(self, now_root):
         # 1- malignant  0-benign
