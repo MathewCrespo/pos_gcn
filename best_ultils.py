@@ -8,6 +8,7 @@ def parse_best(name,mode='overall'):
         'Test/Acc':[],
         'Test/Malignant_precision':[],
         'Test/Malignant_recall':[],
+        'Test/Benign_precision':[],
         'Test/Benign_recall':[],
         'Test/Malignant_F1':[]
     }
@@ -25,6 +26,12 @@ def parse_best(name,mode='overall'):
     if mode == 'overall':
         n = np.array([metric_record['Test/AUC'],metric_record['Test/Acc'],metric_record['Test/Malignant_precision'],
                         metric_record['Test/Malignant_recall'],metric_record['Test/Benign_recall'],metric_record['Test/Malignant_F1']])
+        overall = np.sum(n,axis=0)
+        idx = np.argmax(overall)
+    
+    if mode == 'overall2':
+        n = np.array([metric_record['Test/AUC'],metric_record['Test/Acc'],metric_record['Test/Malignant_precision'],
+                        metric_record['Test/Malignant_recall'],metric_record['Test/Benign_precision'], metric_record['Test/Benign_recall'],metric_record['Test/Malignant_F1']])
         overall = np.sum(n,axis=0)
         idx = np.argmax(overall)
     
@@ -51,6 +58,5 @@ def parse_best(name,mode='overall'):
     fp.close()
 
 if __name__ == '__main__':
-    for i in range(5):
-        parse_best('K8_{}'.format(i)) 
-    
+    for i in [3,4]:
+        parse_best('2CNN_ss_graph{}'.format(i),mode='overall') 

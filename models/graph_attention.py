@@ -600,7 +600,7 @@ class Attention(nn.Module):
         return Y_prob, Y_pred, neg_log_likelihood, A
 
 class GCN_Pos_normcat_K (nn.Module):  
-    def __init__(self,k=8,num_features=500, nhid=256, num_classes=2, pooling_ratio = 0.75):
+    def __init__(self,k=16,num_features=500, nhid=256, num_classes=2, pooling_ratio = 0.75):
         super(GCN_Pos_normcat_K,self).__init__()
         self.k = k
         self.num_features = num_features
@@ -652,6 +652,66 @@ class GCN_Pos_normcat_K (nn.Module):
         pos_info = self.layernorm_p(pos_info)
 
         feature = torch.cat([feature,pos_info],dim=1)
+        edge_index = self.construct(feature)        
+        x = F.relu(self.conv1(feature,edge_index))
+        x, edge_index, _, batch, perm1, score1 = self.pool1(x, edge_index)
+        x1 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+
+        x = F.relu(self.conv2(x, edge_index))
+        x, edge_index, _, batch,perm2, score2 = self.pool2(x, edge_index)
+        x2 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+        
+        x = F.relu(self.conv3(x, edge_index))
+        x, edge_index, _, batch, perm3, score3 = self.pool3(x, edge_index)
+        x3 = torch.cat([gmp(x, batch), gap(x, batch)], dim=1)
+
+        x = x1 + x2 + x3   # image feature after SAGPooling
+        return x
+
+
+
+class GCN_K (nn.Module):  
+    def __init__(self,k=16,num_features=500, nhid=256, num_classes=2, pooling_ratio = 0.75):
+        super(GCN_K,self).__init__()
+        self.k = k
+        self.num_features = num_features
+        self.nhid = nhid
+        self.num_classes = num_classes
+        self.pooling_ratio = pooling_ratio
+        
+        self.conv1 = GCNConv(500, self.nhid)
+        self.pool1 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+        self.conv2 = GCNConv(self.nhid, self.nhid)
+        self.pool2 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+        self.conv3 = GCNConv(self.nhid, self.nhid)
+        self.pool3 = SAGPooling(self.nhid, ratio=self.pooling_ratio)
+
+    def to_coo(self,adj):
+        coo = sparse.coo_matrix(adj)
+        row = torch.from_numpy(coo.row.astype(np.int64)).to(torch.long)
+        col = torch.from_numpy(coo.col.astype(np.int64)).to(torch.long)
+        edge_index = torch.stack([row,col])
+        return edge_index
+
+
+    def construct(self,x):
+        num_node = x.shape[0]
+        if num_node == 1 :
+            edge_index = torch.LongTensor([[],[]])
+        else:
+            if num_node -1 < self.k:
+                adj = torch.ones((num_node,num_node))
+                edge_index = self.to_coo(adj)
+            
+            else:
+                adj = kneighbors_graph(x.cpu().detach().numpy(), n_neighbors=self.k)
+                edge_index = self.to_coo(adj)
+        
+        return edge_index.cuda()
+                
+    
+    def forward(self, feature):
+        # position embedding using simple linear layer
         edge_index = self.construct(feature)        
         x = F.relu(self.conv1(feature,edge_index))
         x, edge_index, _, batch, perm1, score1 = self.pool1(x, edge_index)
@@ -753,6 +813,46 @@ class H_Attention_GraphV3(nn.Module):
         # part1: feature extractor
         H = self.fe(x)
         img_info = img_info.squeeze(0)
+
+        
+        #print('Patch Feature Shape is ', H.shape)
+
+        # part2: construct a graph and get image level feature
+        img_features = []
+        #perms_set = []
+        #scores_set = []
+        for i in range(len(idx_list)-1):
+            h_patch = H[idx_list[i]:idx_list[i+1], :]
+            i_info = img_info[idx_list[i]:idx_list[i+1], :]
+            i_feature = self.gcn(h_patch.cuda(), i_info)
+            #perms_set.append(perms)
+            #scores_set.append(scores)
+            #print(i_feature.shape)
+            img_features.append(i_feature)
+
+        instance_f = torch.cat([x for x in img_features],dim = 0)
+        #print('Image Feature Shape is ', instance_f.shape)
+
+        # part3 bag aggregation and prediction
+        Y_prob, Y_pred, loss, weights = self.attn.cal_loss(instance_f,y)
+
+        return Y_prob, Y_pred, loss, weights
+
+class Flatten_Graph(nn.Module):
+    def __init__(self, gcn = GCN_Pos_normcat_K(), attn = Attention()):
+        super(Flatten_Graph,self).__init__()
+        self.l1 = nn.Linear(3*28*28,500)
+        self.gcn = gcn
+        self.attn = attn
+        
+    def forward(self, x, img_info, y, idx_list):
+        # input dim nxcxhxw
+        img_info = img_info.squeeze(0)
+        x = x.squeeze(0)
+        #print(x.shape)
+        batch = x.shape[0]
+        H = x.view(batch,-1)
+        H = self.l1(H)
 
         
         #print('Patch Feature Shape is ', H.shape)

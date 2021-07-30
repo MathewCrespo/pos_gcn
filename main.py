@@ -21,7 +21,7 @@ from data.DirectBags import DirectBags
 from data.PatientBags import PatientBags
 from data.PatientBags_old import PatientBags_old
 from models.attentionMIL import Attention, GatedAttention,H_Attention, S_H_Attention, S_H_Attention2, Res_Attention, HX_Attention, HX_Res
-from models.graph_attention import H_Attention_Graph, H_Attention_GraphV2
+from models.graph_attention import H_Attention_Graph, H_Attention_GraphV2,Flatten_Graph
 from models.ablation import Double_Attention, Graph_Attention
 from trainers.MILTrainer import MILTrainer
 from trainers.BaseTrainer import BaseTrainer
@@ -218,7 +218,7 @@ if __name__=='__main__':
     # choose model
     base_nets = ['Attention','Res_Attention']
     baseline = ['HX_Attention','HX_Res']
-    graph_nets = ['H_Attention_Graph','H_Attention_GraphV3','H_Attention_GraphV2']
+    graph_nets = ['H_Attention_Graph','H_Attention_GraphV3','H_Attention_GraphV2','Flatten_Graph']
 
     if not args.ablation:
         if args.net in base_nets:

@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .ResNet import ResNet10, ResNet18, ResNet34
-from .graph_attention import FE_Res10, GCN_H, Attention
+from .graph_attention import FE_Res10, GCN_H, Attention,GCN_K
 
 class ss_attention(nn.Module):  # single MIL -- doing attention operation directly on selective-search patches globally
     def __init__(self, input_dim=3, L=500, D=128, K=1):
@@ -210,6 +210,36 @@ class S_H_Attention2(nn.Module):
 
 ## Selective Search Hierarchical Attention Multiple Instance Learning
 # selective search + two attention layers
+class FE_CNN(nn.Module):
+    def __init__(self, input_dim=3, L=500, D=128, K=1):
+        super(FE_CNN, self).__init__()
+        self.input_dim = input_dim
+        self.L = L
+        self.D = D
+        self.K = K
+
+        self.feature_extractor_part1 = nn.Sequential(
+            nn.Conv2d(self.input_dim, 20, kernel_size=5),
+            nn.ReLU(),
+            nn.MaxPool2d(2, stride=2),
+            nn.Conv2d(20, 50, kernel_size=5),
+            nn.ReLU(),
+            nn.MaxPool2d(2, stride=2)
+        )
+        self.feature_extractor_part2 = nn.Sequential(
+            nn.Linear(50 * 25 * 25, self.L),
+            nn.ReLU(),
+        )
+
+    def forward(self, x):
+        #x = x.squeeze(0)
+        #print(x.shape)
+        H = self.feature_extractor_part1(x)
+        #print(H.shape)  
+        H = H.view(-1, 50 * 25* 25)       
+        H = self.feature_extractor_part2(H)  # NxL
+        return H
+
 class Double_Attention(nn.Module):
     def __init__(self, input_dim=3, L=500, D=128, K=1):
         super(Double_Attention, self).__init__()
@@ -220,13 +250,15 @@ class Double_Attention(nn.Module):
         self.L = L
         self.D = D
         self.K = K
-
+        '''
         self.feature_extractor_part1 = ResNet10()
         # input size (3x112x112)
         self.feature_extractor_part2 = nn.Sequential(
             nn.Linear(512 * 4 * 4, self.L),
             nn.ReLU(),
         )
+        '''
+        self.FE = FE_CNN()
         self.attention1 = nn.Sequential(
             nn.Linear(self.L, self.D),
             nn.Tanh(),
@@ -245,6 +277,7 @@ class Double_Attention(nn.Module):
 
     def forward(self, x, Y, idx_list, debug=False):
         x = x.squeeze(0)
+        '''
         if debug:
             print("x shape:", x.shape)
 
@@ -257,9 +290,9 @@ class Double_Attention(nn.Module):
         H = self.feature_extractor_part2(H)  # NxL
         if debug:
             print("feature_extractor_part2 shape:", H.shape)
-
+        '''
         ## doing attention on image patch level
-
+        H = self.FE(x)
         A = self.attention1(H)  # NxK
         if debug:
             print('A shape is {}'.format(A.shape))
@@ -297,7 +330,7 @@ class Double_Attention(nn.Module):
 
 
 class Graph_Attention(nn.Module):
-    def __init__(self, fe = FE_Res10() , f_gcn = GCN_H(), attn = Attention()):
+    def __init__(self, fe = FE_CNN() , f_gcn = GCN_K(), attn = Attention()):
         super(Graph_Attention,self).__init__()
         self.fe = fe
         self.gcn = f_gcn
@@ -306,6 +339,7 @@ class Graph_Attention(nn.Module):
     def forward(self, x,y, idx_list):
         #print('Input Shape is ', x.shape)
         # part1: feature extractor
+        x = x.squeeze(0)
         H = self.fe(x)
 
         

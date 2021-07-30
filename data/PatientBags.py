@@ -72,7 +72,7 @@ class PatientBags(Dataset):
         self.patient_dict = [self.patient_dict[i] for i in range(len(self.patient_dict)) if i not in null_record]
         #print(null_record)
 
-    def crop(self, img, size=28):
+    def crop(self, img, size=112):
             crop_bag = []
             for i in range(img.shape[1]//size):
                 for j in range(img.shape[2]//size):
