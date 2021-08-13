@@ -21,7 +21,7 @@ from data.DirectBags import DirectBags
 from data.PatientBags import PatientBags
 from data.PatientBags_old import PatientBags_old
 from models.attentionMIL import Attention, GatedAttention,H_Attention, S_H_Attention, S_H_Attention2, Res_Attention, HX_Attention, HX_Res
-from models.graph_attention import H_Attention_Graph, H_Attention_GraphV2
+#from models.graph_attention import H_Attention_Graph, H_Attention_GraphV2
 from trainers.MILTrainer import MILTrainer
 from trainers.BaseTrainer import BaseTrainer
 from utils.logger import Logger

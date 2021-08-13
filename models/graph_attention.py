@@ -313,6 +313,7 @@ class GCN_Pos_normcat (nn.Module):
         self.num_classes = num_classes
         self.pooling_ratio = pooling_ratio
         self.t = t
+        print(self.t)
 
         self.pos_embed = nn.Sequential(
             nn.Linear(6, 12)
@@ -328,7 +329,6 @@ class GCN_Pos_normcat (nn.Module):
         self.layernorm_p = nn.LayerNorm(12)
 
     def get_threshold (self,x):
-
         gamma = 0
         
         node_num = x.shape[0]
